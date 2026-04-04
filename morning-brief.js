@@ -20,11 +20,13 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { execSync } = require('child_process');
 
-const BRIEF_DIR = process.env.BRIEF_DIR || './shared/daily-brief';
-const SCRIPTS_DIR = process.env.SCRIPTS_DIR || './scripts';
-const OUTPUT_DIR = process.env.OUTPUT_DIR || './output';
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
+const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
+const SCRIPTS_DIR = path.join(CLAWD_DIR, 'scripts');
+const OUTPUT_DIR = process.env.MORNING_BRIEF_OUTPUT_DIR || path.join(CLAWD_DIR, 'output/team-kevin');
 
 function today() {
   return new Date().toISOString().split('T')[0];
@@ -172,14 +174,14 @@ function run() {
   const briefFile = path.join(BRIEF_DIR, `morning-brief-${date}.md`);
   fs.writeFileSync(briefFile, brief);
 
-  // Also write to output for Kevin
+  // Also write to output
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   const outputFile = path.join(OUTPUT_DIR, `${date}-morning-brief.md`);
   fs.writeFileSync(outputFile, brief);
 
   // Telegram summary (condensed)
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID || process.env.KEVIN_TELEGRAM_CHAT_ID;
+  const chatId = process.env.ALERT_TELEGRAM_CHAT_ID || process.env.TELEGRAM_CHAT_ID || process.env.KEVIN_TELEGRAM_CHAT_ID;
   if (token && chatId) {
     const pm2Line = pm2 ? `Fleet: ${pm2.online}/${pm2.total} online` : '';
     const tgMsg = `☀️ *Morning Brief — ${date}*\n\n${pm2Line}\n${sections.filter(s => s.includes('✅') || s.includes('⚠️') || s.includes('🔴')).join('\n')}`.slice(0, 4000);

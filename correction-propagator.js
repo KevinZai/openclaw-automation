@@ -23,11 +23,13 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const WORKSPACES_DIR = process.env.WORKSPACES_DIR || './workspaces';
-const PENDING_RULES_DIR = process.env.RULES_DIR || './shared/pending-rules';
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
+const WORKSPACES_DIR = path.join(CLAWD_DIR, 'workspaces');
+const PENDING_RULES_DIR = path.join(CLAWD_DIR, 'shared/pending-rules');
 const STATE_FILE = path.join(__dirname, '.correction-propagator-state.json');
-const BRIEF_DIR = process.env.BRIEF_DIR || './shared/daily-brief';
+const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
 const MIN_OCCURRENCES = 3;
 const SIMILARITY_THRESHOLD = 0.6;
 
@@ -230,7 +232,7 @@ function run() {
   }
 
   // Also scan shared/preferences/ files for corrections
-  const prefsDir = 'CLAWD_DIR/shared/preferences';
+  const prefsDir = path.join(CLAWD_DIR, 'shared/preferences');
   if (fs.existsSync(prefsDir)) {
     try {
       const prefs = fs.readdirSync(prefsDir).filter(f => f.endsWith('.md'));

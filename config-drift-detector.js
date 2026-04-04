@@ -22,12 +22,15 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
 
-const CONFIG_FILE = process.env.OPENCLAW_CONFIG || path.join(os.homedir(), '.openclaw', 'openclaw.json');
+const OPENCLAW_DIR = process.env.OPENCLAW_DIR || path.join(os.homedir(), '.openclaw');
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
+const CONFIG_FILE = path.join(OPENCLAW_DIR, 'openclaw.json');
 const STATE_FILE = path.join(__dirname, '.config-drift-state.json');
-const BRIEF_DIR = process.env.BRIEF_DIR || './shared/daily-brief';
+const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
 const SNAPSHOT_DIR = path.join(__dirname, '.config-snapshots');
 
 function loadState() {
@@ -49,7 +52,7 @@ function hashFile(filePath) {
 
 function sendTelegramAlert(message) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID || process.env.KEVIN_TELEGRAM_CHAT_ID;
+  const chatId = process.env.ALERT_TELEGRAM_CHAT_ID || process.env.TELEGRAM_CHAT_ID || process.env.KEVIN_TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
   try {
     const encoded = encodeURIComponent(message);

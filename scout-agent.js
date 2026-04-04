@@ -23,23 +23,33 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const http = require('http');
 const { execSync } = require('child_process');
 
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
+const PAPERCLIP_URL = process.env.PAPERCLIP_URL || 'http://localhost:3110';
+const COMPANY = process.env.OPENCLAW_COMPANY_ID || 'd852cff2-1645-4c48-ae14-010bd8230444';
+
 const STATE_FILE = path.join(__dirname, '.scout-state.json');
-const PAPERCLIP_URL = 'http://localhost:3110';
-const COMPANY = process.env.PAPERCLIP_COMPANY_ID || 'YOUR_COMPANY_ID';
-const BRIEF_DIR = process.env.BRIEF_DIR || './shared/daily-brief';
+const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
+const WORKSPACES_DIR = path.join(CLAWD_DIR, 'workspaces');
 
 const FREE_AGENTS = {
-  oracle: process.env.ORACLE_AGENT_ID || 'ORACLE_AGENT_ID',
-  forge: process.env.FORGE_AGENT_ID || 'FORGE_AGENT_ID',
-  lama: process.env.LAMA_AGENT_ID || 'LAMA_AGENT_ID',
+  oracle: process.env.AGENT_ID_ORACLE || 'bc370f55-81db-4e38-bbbb-00eca803d799',
+  forge: process.env.AGENT_ID_FORGE || '1234c699-6592-42a6-b746-266f9618507a',
+  lama: process.env.AGENT_ID_LAMA || 'f4ad011a-cc1c-46ac-a9c5-782891b48185',
 };
 
+const FLEET_OPS_PROJECT =
+  process.env.FLEET_OPS_PROJECT_ID || '54370a04-d5b1-481a-87ca-6f9cfaf4a3ed';
+
 function loadState() {
-  try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); }
-  catch { return { lastRun: null, signals: [], tasksCreated: 0 }; }
+  try {
+    return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+  } catch {
+    return { lastRun: null, signals: [], tasksCreated: 0 };
+  }
 }
 
 function saveState(state) {
@@ -51,15 +61,22 @@ function apiCall(method, urlPath, body) {
     const data = body ? JSON.stringify(body) : null;
     const opts = {
       method,
-      headers: data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {},
+      headers: data
+        ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+        : {},
       timeout: 10000,
     };
-    const req = http.request(`${PAPERCLIP_URL}${urlPath}`, opts, (res) => {
+    const req = http.request(`${PAPERCLIP_URL}${urlPath}`, opts, res => {
       let body = '';
-      res.on('data', chunk => { body += chunk; });
+      res.on('data', chunk => {
+        body += chunk;
+      });
       res.on('end', () => {
-        try { resolve({ status: res.statusCode, data: JSON.parse(body) }); }
-        catch { resolve({ status: res.statusCode, data: body }); }
+        try {
+          resolve({ status: res.statusCode, data: JSON.parse(body) });
+        } catch {
+          resolve({ status: res.statusCode, data: body });
+        }
       });
     });
     req.on('error', reject);
@@ -72,10 +89,15 @@ function apiCall(method, urlPath, body) {
 async function findStaleTasks() {
   const signals = [];
   try {
-    const resp = await apiCall('GET', `/api/companies/${COMPANY}/issues?status=in_progress&limit=50`);
+    const resp = await apiCall(
+      'GET',
+      `/api/companies/${COMPANY}/issues?status=in_progress&limit=50`,
+    );
     if (resp.status !== 200) return signals;
 
-    const issues = Array.isArray(resp.data) ? resp.data : (resp.data?.data || resp.data?.issues || []);
+    const issues = Array.isArray(resp.data)
+      ? resp.data
+      : resp.data?.data || resp.data?.issues || [];
     const now = Date.now();
     const staleThreshold = 48 * 60 * 60 * 1000;
 
@@ -120,25 +142,29 @@ function findDownServices() {
 // Signal 3: Unprocessed [TASK] tags in memory files
 function findUnprocessedTasks() {
   const signals = [];
-  const workspacesDir = process.env.WORKSPACES_DIR || './workspaces';
   const today = new Date().toISOString().split('T')[0];
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
   try {
-    const workspaces = fs.readdirSync(workspacesDir).filter(d => {
-      return fs.statSync(path.join(workspacesDir, d)).isDirectory() && !d.startsWith('.');
+    const workspaces = fs.readdirSync(WORKSPACES_DIR).filter(d => {
+      return (
+        fs.statSync(path.join(WORKSPACES_DIR, d)).isDirectory() && !d.startsWith('.')
+      );
     });
 
     for (const ws of workspaces) {
       for (const dateStr of [today, yesterday]) {
-        const memFile = path.join(workspacesDir, ws, 'memory', `${dateStr}.md`);
+        const memFile = path.join(WORKSPACES_DIR, ws, 'memory', `${dateStr}.md`);
         if (!fs.existsSync(memFile)) continue;
 
         const content = fs.readFileSync(memFile, 'utf8');
         const taskLines = content.split('\n').filter(l => l.includes('[TASK]'));
 
         for (const line of taskLines) {
-          const text = line.replace(/\[TASK\]/g, '').replace(/^[\s\-\*#]+/, '').trim();
+          const text = line
+            .replace(/\[TASK\]/g, '')
+            .replace(/^[\s\-\*#]+/, '')
+            .trim();
           if (text.length > 10) {
             signals.push({
               type: 'MEMORY_TASK',
@@ -184,17 +210,29 @@ function findBriefAlerts() {
   return signals;
 }
 
+const SIGNAL_LABELS = {
+  STALE_TASK: ['research'],
+  SERVICE_DOWN: ['config'],
+  MEMORY_TASK: ['research'],
+  CRITICAL_ERROR: ['bug'],
+  BACKUP_ISSUE: ['config'],
+};
+
 async function createTask(signal) {
   try {
+    const labels = SIGNAL_LABELS[signal.type] || ['research'];
     const resp = await apiCall('POST', `/api/companies/${COMPANY}/issues`, {
-      title: `[SCOUT] ${signal.type}: ${signal.detail.slice(0, 80)}`,
+      title: `[Scout] ${signal.type}: ${signal.detail.slice(0, 80)}`,
       description: `**Auto-discovered by Scout Agent**\n\n**Signal:** ${signal.type}\n**Detail:** ${signal.detail}\n**Recommended Action:** ${signal.action}`,
       status: 'todo',
       priority: signal.type === 'CRITICAL_ERROR' ? 'critical' : 'medium',
-      assigneeAgentId: FREE_AGENTS.oracle,
+      labels,
+      projectId: FLEET_OPS_PROJECT,
     });
-    return resp.status === 201;
-  } catch { return false; }
+    return resp.status === 201 || resp.status === 200;
+  } catch {
+    return false;
+  }
 }
 
 async function run() {
@@ -204,7 +242,7 @@ async function run() {
   console.log('[scout] Scanning for actionable signals...');
 
   const allSignals = [
-    ...await findStaleTasks(),
+    ...(await findStaleTasks()),
     ...findDownServices(),
     ...findUnprocessedTasks(),
     ...findBriefAlerts(),
@@ -217,7 +255,8 @@ async function run() {
   const newSignals = allSignals.filter(s => !lastSignalKeys.has(s.detail));
 
   let created = 0;
-  for (const signal of newSignals.slice(0, 5)) { // Max 5 tasks per run
+  for (const signal of newSignals.slice(0, 5)) {
+    // Max 5 tasks per run
     const ok = await createTask(signal);
     if (ok) created++;
     console.log(`  ${ok ? '✅' : '❌'} ${signal.type}: ${signal.detail.slice(0, 60)}`);

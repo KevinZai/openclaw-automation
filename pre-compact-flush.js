@@ -17,15 +17,17 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const CLAWD = process.env.CLAWD_DIR || '.';
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
+const WORKSPACES = (process.env.OPENCLAW_WORKSPACES || 'main,trading,architecture,guestnetworks,orchestrator,wealth').split(',');
 
 function getToday() {
   return new Date().toISOString().split('T')[0];
 }
 
 function flush(workspace) {
-  const memDir = path.join(CLAWD, 'workspaces', workspace, 'memory');
+  const memDir = path.join(CLAWD_DIR, 'workspaces', workspace, 'memory');
   const memFile = path.join(memDir, `${getToday()}.md`);
 
   // Create memory dir if needed
@@ -48,8 +50,7 @@ if (workspace) {
   flush(workspace);
 } else {
   // Default: flush all active workspaces
-  const workspaces = ['main', 'trading', 'architecture', 'guestnetworks', 'orchestrator', 'wealth'];
-  for (const ws of workspaces) {
+  for (const ws of WORKSPACES) {
     flush(ws);
   }
 }

@@ -27,11 +27,14 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { execSync } = require('child_process');
 
-const LOG_FILE = `LOG_DIRopenclaw-${new Date().toISOString().split('T')[0]}.log`;
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
+
+const LOG_FILE = `/tmp/openclaw/openclaw-${new Date().toISOString().split('T')[0]}.log`;
 const STATE_FILE = path.join(__dirname, '.self-heal-state.json');
-const BRIEF_DIR = process.env.BRIEF_DIR || './shared/daily-brief';
+const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
 const HEAL_LOG = path.join(BRIEF_DIR, `self-heal-${new Date().toISOString().split('T')[0]}.md`);
 
 function loadState() {
@@ -54,12 +57,16 @@ function saveState(state) {
 
 function sendTelegramAlert(message) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID || process.env.KEVIN_TELEGRAM_CHAT_ID;
+  const chatId =
+    process.env.ALERT_TELEGRAM_CHAT_ID || process.env.KEVIN_TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
 
   try {
     const encoded = encodeURIComponent(message);
-    execSync(`curl -sf "https://api.telegram.org/bot${token}/sendMessage?chat_id=${chatId}&text=${encoded}&parse_mode=Markdown" > /dev/null 2>&1`, { timeout: 10000 });
+    execSync(
+      `curl -sf "https://api.telegram.org/bot${token}/sendMessage?chat_id=${chatId}&text=${encoded}&parse_mode=Markdown" > /dev/null 2>&1`,
+      { timeout: 10000 },
+    );
   } catch {}
 }
 
@@ -69,9 +76,11 @@ function appendHealLog(entries) {
     ? ''
     : `# Self-Heal Log — ${new Date().toISOString().split('T')[0]}\n\n`;
 
-  const lines = entries.map(e =>
-    `- \`${new Date().toISOString().slice(11, 19)}\` **${e.type}**: ${e.message}`
-  ).join('\n');
+  const lines = entries
+    .map(
+      e => `- \`${new Date().toISOString().slice(11, 19)}\` **${e.type}**: ${e.message}`,
+    )
+    .join('\n');
 
   fs.appendFileSync(HEAL_LOG, header + lines + '\n');
 }
@@ -119,7 +128,10 @@ function run() {
 
   for (const line of lines) {
     // OAuth 401
-    if (line.includes('authentication_error') || line.includes('OAuth authentication is currently not supported')) {
+    if (
+      line.includes('authentication_error') ||
+      line.includes('OAuth authentication is currently not supported')
+    ) {
       authErrors++;
     }
 
@@ -129,12 +141,16 @@ function run() {
     }
 
     // Memory issues
-    if (line.includes('heap out of memory') || line.includes('ENOMEM') || line.includes('allocation failed')) {
+    if (
+      line.includes('heap out of memory') ||
+      line.includes('ENOMEM') ||
+      line.includes('allocation failed')
+    ) {
       oomErrors++;
     }
 
     // Channel disconnects
-    if (line.includes('stale-socket') || line.includes('reconnect') && line.includes('WebSocket')) {
+    if (line.includes('stale-socket') || (line.includes('reconnect') && line.includes('WebSocket'))) {
       disconnects++;
     }
 
@@ -171,7 +187,9 @@ function run() {
       message: `${oomErrors} memory errors detected. Recommend session cleanup: openclaw sessions cleanup`,
     });
     // Alert immediately for OOM
-    sendTelegramAlert(`⚠️ *Self-Heal: Memory Alert*\n\n${oomErrors} OOM errors in gateway logs. May need session cleanup or restart.`);
+    sendTelegramAlert(
+      `⚠️ *Self-Heal: Memory Alert*\n\n${oomErrors} OOM errors in gateway logs. May need session cleanup or restart.`,
+    );
   }
 
   if (disconnects > 20) {
@@ -188,8 +206,11 @@ function run() {
     });
     // Alert for uncaught exceptions (potential crash loop)
     const now = Date.now();
-    if (now - state.lastAlertTime > 1800000) { // 30 min cooldown
-      sendTelegramAlert(`🚨 *Self-Heal: Uncaught Exception*\n\n${uncaughtErrors} uncaught errors in gateway. Check for crash loop.`);
+    if (now - state.lastAlertTime > 1800000) {
+      // 30 min cooldown
+      sendTelegramAlert(
+        `🚨 *Self-Heal: Uncaught Exception*\n\n${uncaughtErrors} uncaught errors in gateway. Check for crash loop.`,
+      );
       state.lastAlertTime = now;
     }
   }
@@ -197,16 +218,19 @@ function run() {
   // Log heal actions
   if (healActions.length > 0) {
     appendHealLog(healActions);
-    state.heals = [...(state.heals || []).slice(-100), ...healActions.map(h => ({
-      ...h, time: new Date().toISOString(),
-    }))];
+    state.heals = [
+      ...(state.heals || []).slice(-100),
+      ...healActions.map(h => ({ ...h, time: new Date().toISOString() })),
+    ];
   }
 
   saveState(state);
 
   // Summary
   const total = authErrors + rateLimits + oomErrors + disconnects + uncaughtErrors;
-  console.log(`[self-heal] Scanned ${lines.length} lines: ${total} errors (auth:${authErrors} 429:${rateLimits} oom:${oomErrors} disc:${disconnects} uncaught:${uncaughtErrors}), ${healActions.length} actions`);
+  console.log(
+    `[self-heal] Scanned ${lines.length} lines: ${total} errors (auth:${authErrors} 429:${rateLimits} oom:${oomErrors} disc:${disconnects} uncaught:${uncaughtErrors}), ${healActions.length} actions`,
+  );
 }
 
 run();

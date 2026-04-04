@@ -20,9 +20,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const WORKSPACES_DIR = process.env.WORKSPACES_DIR || './workspaces';
-const BRIEF_DIR = process.env.BRIEF_DIR || './shared/daily-brief';
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
+
+const WORKSPACES_DIR = path.join(CLAWD_DIR, 'workspaces');
+const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
 
 const REQUIRED_FILES = ['AGENTS.md', 'IDENTITY.md', 'SOUL.md', 'TOOLS.md', 'USER.md', 'HEARTBEAT.md', 'MEMORY.md'];
 const SKIP_WORKSPACES = ['archive', 'guests'];
@@ -51,7 +54,7 @@ function checkWorkspace(wsName) {
       const refPattern = /(?:~\/clawd\/|\/Users\/ai\/clawd\/)([\w\-\/\.]+)/g;
       let match;
       while ((match = refPattern.exec(content)) !== null) {
-        const refPath = path.join(process.env.CLAWD_DIR || '.', match[1]);
+        const refPath = path.join(CLAWD_DIR, match[1]);
         if (!fs.existsSync(refPath) && !refPath.includes('YYYY') && !refPath.includes('{')) {
           issues.push({ file, type: 'BROKEN_REF', detail: `References non-existent path: ${match[0]}` });
         }

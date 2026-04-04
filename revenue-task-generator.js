@@ -30,16 +30,16 @@ const path = require('path');
 const http = require('http');
 
 const STATE_FILE = path.join(__dirname, '.revenue-task-state.json');
-const PAPERCLIP_URL = 'http://localhost:3110';
-const TEAM_KEVIN_COMPANY = process.env.PAPERCLIP_COMPANY_ID || 'YOUR_COMPANY_ID';
-const GN_COMPANY = process.env.PAPERCLIP_GN_COMPANY_ID || 'YOUR_GN_COMPANY_ID';
+const PAPERCLIP_URL = process.env.PAPERCLIP_URL || 'http://localhost:3110';
+const TEAM_KEVIN_COMPANY = process.env.OPENCLAW_COMPANY_ID || 'd852cff2-1645-4c48-ae14-010bd8230444';
+const GN_COMPANY = process.env.OPENCLAW_GN_COMPANY_ID || '301d588f-b5c6-4957-a6bc-fdcd3860f0cd';
 
 // Free fleet agent IDs — $0 cost
 const FREE_AGENTS = {
-  forge: process.env.FORGE_AGENT_ID || 'FORGE_AGENT_ID',   // HuggingFace
-  flare: process.env.FLARE_AGENT_ID || 'FLARE_AGENT_ID',   // Cloudflare
-  lama: process.env.LAMA_AGENT_ID || 'LAMA_AGENT_ID',    // Ollama
-  oracle: process.env.ORACLE_AGENT_ID || 'ORACLE_AGENT_ID',  // Groq
+  forge: process.env.OPENCLAW_AGENT_FORGE || '1234c699-6592-42a6-b746-266f9618507a',   // HuggingFace
+  flare: process.env.OPENCLAW_AGENT_FLARE || 'da8ba82b-d860-4825-b387-3e3042478441',   // Cloudflare
+  lama: process.env.OPENCLAW_AGENT_LAMA || 'f4ad011a-cc1c-46ac-a9c5-782891b48185',    // Ollama
+  oracle: process.env.OPENCLAW_AGENT_ORACLE || 'bc370f55-81db-4e38-bbbb-00eca803d799',  // Groq
 };
 
 function loadState() {
@@ -54,18 +54,18 @@ function saveState(state) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
-function apiPost(path, body) {
+function apiPost(apiPath, body) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
-    const req = http.request(`${PAPERCLIP_URL}${path}`, {
+    const req = http.request(`${PAPERCLIP_URL}${apiPath}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
       timeout: 10000,
     }, (res) => {
-      let body = '';
-      res.on('data', chunk => { body += chunk; });
+      let buf = '';
+      res.on('data', chunk => { buf += chunk; });
       res.on('end', () => {
-        try { resolve(JSON.parse(body)); } catch { resolve(body); }
+        try { resolve(JSON.parse(buf)); } catch { resolve(buf); }
       });
     });
     req.on('error', reject);

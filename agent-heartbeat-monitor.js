@@ -21,15 +21,20 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { execSync } = require('child_process');
 
-const AGENTS_DIR = process.env.AGENTS_DIR || path.join(os.homedir(), '.openclaw', 'agents');
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
+const OPENCLAW_AGENTS_DIR =
+  process.env.OPENCLAW_AGENTS_DIR || path.join(os.homedir(), '.openclaw/agents');
+
+const AGENTS_DIR = OPENCLAW_AGENTS_DIR;
 const STATE_FILE = path.join(__dirname, '.heartbeat-state.json');
-const BRIEF_DIR = process.env.BRIEF_DIR || './shared/daily-brief';
+const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
 
 const CRITICAL_AGENTS = ['main', 'morpheus', 'neo', 'trading', 'jarvis'];
 const CRITICAL_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
-const NORMAL_THRESHOLD_MS = 6 * 60 * 60 * 1000;   // 6 hours
+const NORMAL_THRESHOLD_MS = 6 * 60 * 60 * 1000; // 6 hours
 const BUSINESS_HOURS = { start: 8, end: 23 }; // EST-ish
 const MAX_CONSECUTIVE_MISSES = 3;
 
@@ -54,7 +59,10 @@ function getAgentLastActivity(agentId) {
     let latest = 0;
     for (const [, session] of Object.entries(data)) {
       if (session && typeof session === 'object' && session.updatedAt) {
-        const ts = typeof session.updatedAt === 'number' ? session.updatedAt : Date.parse(session.updatedAt);
+        const ts =
+          typeof session.updatedAt === 'number'
+            ? session.updatedAt
+            : Date.parse(session.updatedAt);
         if (ts > latest) latest = ts;
       }
     }
@@ -71,7 +79,8 @@ function isBusinessHours() {
 
 function sendTelegramAlert(message) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID || process.env.KEVIN_TELEGRAM_CHAT_ID;
+  const chatId =
+    process.env.ALERT_TELEGRAM_CHAT_ID || process.env.KEVIN_TELEGRAM_CHAT_ID;
   if (!token || !chatId) {
     console.error('[heartbeat] No Telegram credentials — alert not sent');
     return;
@@ -79,7 +88,10 @@ function sendTelegramAlert(message) {
 
   try {
     const encoded = encodeURIComponent(message);
-    execSync(`curl -sf "https://api.telegram.org/bot${token}/sendMessage?chat_id=${chatId}&text=${encoded}&parse_mode=Markdown" > /dev/null 2>&1`, { timeout: 10000 });
+    execSync(
+      `curl -sf "https://api.telegram.org/bot${token}/sendMessage?chat_id=${chatId}&text=${encoded}&parse_mode=Markdown" > /dev/null 2>&1`,
+      { timeout: 10000 },
+    );
   } catch (e) {
     console.error('[heartbeat] Telegram alert failed:', e.message);
   }
@@ -93,11 +105,15 @@ function resetAgent(agentId) {
     return false;
   }
   try {
-    const result = execSync(`openclaw sessions reset ${agentId} 2>&1`, { timeout: 15000 }).toString();
+    const result = execSync(`openclaw sessions reset ${agentId} 2>&1`, {
+      timeout: 15000,
+    }).toString();
     console.log(`[heartbeat] Auto-reset ${agentId}: ${result.trim()}`);
     return true;
   } catch (e) {
-    console.error(`[heartbeat] Auto-reset ${agentId} failed (non-fatal): ${e.message.split('\n')[0]}`);
+    console.error(
+      `[heartbeat] Auto-reset ${agentId} failed (non-fatal): ${e.message.split('\n')[0]}`,
+    );
     return false;
   }
 }
@@ -112,10 +128,14 @@ function run() {
   // Get all agent dirs (skip _archived, default)
   let agents;
   try {
-    agents = fs.readdirSync(AGENTS_DIR).filter(d =>
-      !d.startsWith('_') && d !== 'default' &&
-      fs.statSync(path.join(AGENTS_DIR, d)).isDirectory()
-    );
+    agents = fs
+      .readdirSync(AGENTS_DIR)
+      .filter(
+        d =>
+          !d.startsWith('_') &&
+          d !== 'default' &&
+          fs.statSync(path.join(AGENTS_DIR, d)).isDirectory(),
+      );
   } catch (e) {
     console.error('[heartbeat] Cannot read agents dir:', e.message);
     process.exit(1);
@@ -164,7 +184,7 @@ function run() {
       const agentMatch = a.match(/\*(\w+)\*/);
       if (!agentMatch) return true;
       const lastAlert = state.lastAlerts[agentMatch[1]] || 0;
-      return (now_ts - lastAlert) > 3600000; // 1 hour cooldown
+      return now_ts - lastAlert > 3600000; // 1 hour cooldown
     });
 
     if (newAlerts.length > 0) {
@@ -189,7 +209,9 @@ function run() {
   // Summary
   const total = agents.length;
   const silent = Object.values(state.misses).filter(v => v > 0).length;
-  console.log(`[heartbeat] ${total} agents checked, ${silent} silent, ${alerts.length} alerts, ${heals.length} auto-heals`);
+  console.log(
+    `[heartbeat] ${total} agents checked, ${silent} silent, ${alerts.length} alerts, ${heals.length} auto-heals`,
+  );
 }
 
 run();

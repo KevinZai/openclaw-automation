@@ -22,12 +22,39 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const https = require('https');
 const http = require('http');
 
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
 const STATE_FILE = path.join(__dirname, '.competitive-monitor-state.json');
-const BRIEF_DIR = process.env.BRIEF_DIR || './shared/daily-brief';
+const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
 const SNAPSHOT_DIR = path.join(__dirname, '.competitive-snapshots');
+const PAPERCLIP_URL = process.env.PAPERCLIP_URL || 'http://localhost:3110';
+const COMPANY = process.env.OPENCLAW_COMPANY_ID || 'd852cff2-1645-4c48-ae14-010bd8230444';
+const USER_AGENT = process.env.MONITOR_USER_AGENT || 'OpenClaw-Monitor/1.0';
+
+function apiCall(method, urlPath, body) {
+  return new Promise((resolve, reject) => {
+    const data = body ? JSON.stringify(body) : null;
+    const opts = {
+      method,
+      headers: data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {},
+      timeout: 10000,
+    };
+    const req = http.request(`${PAPERCLIP_URL}${urlPath}`, opts, (res) => {
+      let chunks = '';
+      res.on('data', chunk => { chunks += chunk; });
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, data: JSON.parse(chunks) }); }
+        catch { resolve({ status: res.statusCode, data: chunks }); }
+      });
+    });
+    req.on('error', reject);
+    if (data) req.write(data);
+    req.end();
+  });
+}
 
 const COMPETITORS = [
   { name: 'Purple WiFi', url: 'https://purple.ai/pricing/', key: 'purple' },
@@ -52,7 +79,7 @@ function saveState(state) {
 function fetchPage(url) {
   return new Promise((resolve) => {
     const client = url.startsWith('https') ? https : http;
-    const req = client.get(url, { timeout: 15000, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MyWiFi-Monitor/1.0)' } }, (res) => {
+    const req = client.get(url, { timeout: 15000, headers: { 'User-Agent': `Mozilla/5.0 (compatible; ${USER_AGENT})` } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         fetchPage(res.headers.location).then(resolve);
         return;
@@ -114,7 +141,6 @@ async function run() {
     let changes = [];
 
     if (prevSnapshot) {
-      // Check for new or changed prices
       const newPrices = current.prices.filter(p => !prevSnapshot.prices.includes(p));
       const removedPrices = prevSnapshot.prices.filter(p => !current.prices.includes(p));
       const newPlans = current.plans.filter(p => !prevSnapshot.plans.includes(p));
@@ -177,6 +203,24 @@ async function run() {
         date: today, competitor: r.name, changes: r.changes,
       })),
     ];
+  }
+
+  // Create Paperclip tasks for detected changes
+  const MYWIFI_PROJECT = process.env.OPENCLAW_PROJECT_ID || 'f25ab088-a093-4e07-8201-74e206daf51d';
+  for (const r of results.filter(r => r.status === 'CHANGED')) {
+    const changeDesc = r.changes.join('; ');
+    try {
+      const resp = await apiCall('POST', `/api/companies/${COMPANY}/issues`, {
+        title: `[Competitive] ${r.name}: ${changeDesc.slice(0, 60)}`,
+        description: `**Auto-detected by Competitive Monitor**\n\n**Competitor:** ${r.name}\n**Changes:** ${changeDesc}\n**Report:** ${reportFile}\n\n**Action:**\n1. Update battle cards at \`output/guestnetworks/mywifi/battle-cards-complete.md\` — find the ${r.name} section and update pricing/features\n2. Update competitor data at \`projects/mywifi-redesign/src/components/compare/competitors.ts\` — update the relevant entry\n3. Flag if the comparison page at mw.guestnetworks.com/compare/ needs copy changes\n\n**Reference files:**\n- Battle cards: \`output/guestnetworks/mywifi/battle-cards-complete.md\`\n- Competitor TS data: \`projects/mywifi-redesign/src/components/compare/competitors.ts\`\n- Copy audit: \`workspaces/guestnetworks/reports/2026-03-20-copy-audit-compare-content.md\``,
+        status: 'todo',
+        labels: ['research'],
+        projectId: MYWIFI_PROJECT,
+      });
+      console.log(`  ${resp.status === 201 || resp.status === 200 ? '✅' : '❌'} Task created: ${r.name}`);
+    } catch (e) {
+      console.log(`  ❌ Failed to create task for ${r.name}: ${e.message}`);
+    }
   }
 
   state.lastRun = new Date().toISOString();

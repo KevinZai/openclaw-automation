@@ -24,11 +24,13 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { execSync } = require('child_process');
 
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(os.homedir(), 'backups');
 const STATE_FILE = path.join(__dirname, '.backup-verify-state.json');
-const BRIEF_DIR = process.env.BRIEF_DIR || './shared/daily-brief';
+const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
 const KEY_FILES = ['CLAUDE.md', 'ecosystem.config.cjs', 'shared/PORT-REGISTRY.md'];
 const SIZE_DROP_THRESHOLD = 0.20; // Alert if size drops >20%
 
@@ -46,7 +48,7 @@ function saveState(state) {
 
 function sendTelegramAlert(message) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID || process.env.KEVIN_TELEGRAM_CHAT_ID;
+  const chatId = process.env.ALERT_TELEGRAM_CHAT_ID || process.env.TELEGRAM_CHAT_ID || process.env.KEVIN_TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
   try {
     const encoded = encodeURIComponent(message);
@@ -141,7 +143,7 @@ function run() {
   }
 
   if (state.consecutiveFailures >= 3) {
-    sendTelegramAlert('🚨 *Backup CRITICAL: ${state.consecutiveFailures} consecutive failures!*');
+    sendTelegramAlert(`🚨 *Backup CRITICAL: ${state.consecutiveFailures} consecutive failures!*`);
   }
 
   state.lastVerified = new Date().toISOString();

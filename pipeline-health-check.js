@@ -29,35 +29,41 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const BASE_URL = 'http://localhost:3110';
-const COMPANY_ID = process.env.PAPERCLIP_COMPANY_ID || 'YOUR_COMPANY_ID';
+const OPENCLAW_AGENTS_DIR =
+  process.env.OPENCLAW_AGENTS_DIR || path.join(os.homedir(), '.openclaw/agents');
+const PAPERCLIP_URL = process.env.PAPERCLIP_URL || 'http://localhost:3110';
+const COMPANY_ID =
+  process.env.OPENCLAW_COMPANY_ID || 'd852cff2-1645-4c48-ae14-010bd8230444';
+
+const BASE_URL = PAPERCLIP_URL;
 const STATE_FILE = path.join(__dirname, '.pipeline-health-state.json');
 
-const CIRCUIT_BREAKER_THRESHOLD = 3;         // failures before tripping
+const CIRCUIT_BREAKER_THRESHOLD = 3; // failures before tripping
 const CIRCUIT_BREAKER_PAUSE_MS = 5 * 60 * 1000; // 5 min
 const AGENT_ERROR_THRESHOLD_MS = 60 * 60 * 1000; // 1h
 const ISSUE_STUCK_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2h
-const DAILY_BUDGET_LIMIT = 10.00;
+const DAILY_BUDGET_LIMIT = 10.0;
 const RATE_LIMIT_DELAY_MS = 2000; // 30 calls/min = 1 per 2s
 const AGENT_COST_SPIKE_MULTIPLIER = 3; // Alert if agent exceeds 3x its 7-day average
-const SESSION_COST_ALERT = 2.00; // Alert if any single session exceeds $2
-const AGENTS_SESSION_DIR = process.env.AGENTS_DIR || path.join(os.homedir(), '.openclaw', 'agents');
+const SESSION_COST_ALERT = 2.0; // Alert if any single session exceeds $2
+const AGENTS_SESSION_DIR = OPENCLAW_AGENTS_DIR;
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
 // Free fleet agent IDs (forge, flare, lama, oracle, codex-dev)
 const FREE_FLEET_IDS = new Set([
-  process.env.FORGE_AGENT_ID || 'FORGE_AGENT_ID', // forge
-  process.env.FLARE_AGENT_ID || 'FLARE_AGENT_ID', // flare
-  process.env.LAMA_AGENT_ID || 'LAMA_AGENT_ID', // lama
-  process.env.ORACLE_AGENT_ID || 'ORACLE_AGENT_ID', // oracle
-  'c8660590-de82-463d-acf4-1e5b9fa22ae7', // codex-dev
+  process.env.AGENT_ID_FORGE || '1234c699-6592-42a6-b746-266f9618507a', // forge
+  process.env.AGENT_ID_FLARE || 'da8ba82b-d860-4825-b387-3e3042478441', // flare
+  process.env.AGENT_ID_LAMA || 'f4ad011a-cc1c-46ac-a9c5-782891b48185', // lama
+  process.env.AGENT_ID_ORACLE || 'bc370f55-81db-4e38-bbbb-00eca803d799', // oracle
+  process.env.AGENT_ID_CODEX_DEV || 'c8660590-de82-463d-acf4-1e5b9fa22ae7', // codex-dev
 ]);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -70,9 +76,15 @@ function log(level, msg) {
   process.stdout.write(`[${ts()}] [${level}] ${msg}\n`);
 }
 
-function info(msg)  { log('INFO', msg); }
-function warn(msg)  { log('WARN', msg); }
-function error(msg) { log('ERROR', msg); }
+function info(msg) {
+  log('INFO', msg);
+}
+function warn(msg) {
+  log('WARN', msg);
+}
+function error(msg) {
+  log('ERROR', msg);
+}
 
 // ── State persistence (gateway-watchdog pattern) ──────────────────────────────
 
@@ -109,9 +121,11 @@ async function apiGet(urlPath) {
 
   return new Promise((resolve, reject) => {
     const url = `${BASE_URL}${urlPath}`;
-    const req = http.get(url, { timeout: 10000 }, (res) => {
+    const req = http.get(url, { timeout: 10000 }, res => {
       let body = '';
-      res.on('data', chunk => { body += chunk; });
+      res.on('data', chunk => {
+        body += chunk;
+      });
       res.on('end', () => {
         try {
           resolve({ status: res.statusCode, body: JSON.parse(body) });
@@ -121,7 +135,10 @@ async function apiGet(urlPath) {
       });
     });
     req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Request timeout')); });
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
   });
 }
 
@@ -232,7 +249,9 @@ function checkAgentErrors(agents) {
       stuckSince: a.updatedAt ?? 'unknown',
       stuckMs: a.updatedAt ? now - new Date(a.updatedAt).getTime() : null,
     }));
-    warn(`Check 2 ALERT — ${stuckAgents.length} agent(s) stuck in error >1h (alert only, no auto-fix):`);
+    warn(
+      `Check 2 ALERT — ${stuckAgents.length} agent(s) stuck in error >1h (alert only, no auto-fix):`,
+    );
     for (const v of violations) {
       const stuckMin = v.stuckMs ? Math.round(v.stuckMs / 60000) : '?';
       warn(`  agent=${v.id} name="${v.name}" stuck_min=${stuckMin}`);
@@ -243,16 +262,21 @@ function checkAgentErrors(agents) {
 // Check 3: Stuck in_progress issues >2h
 async function checkStuckIssues() {
   try {
-    const resp = await apiGet(`/api/companies/${COMPANY_ID}/issues?status=in_progress&limit=100`);
+    const resp = await apiGet(
+      `/api/companies/${COMPANY_ID}/issues?status=in_progress&limit=100`,
+    );
     if (resp.status !== 200) {
       warn(`Check 3 SKIP — issues endpoint returned HTTP ${resp.status}.`);
       return;
     }
 
-    const issues = Array.isArray(resp.body) ? resp.body
-      : Array.isArray(resp.body?.issues) ? resp.body.issues
-      : Array.isArray(resp.body?.data) ? resp.body.data
-      : [];
+    const issues = Array.isArray(resp.body)
+      ? resp.body
+      : Array.isArray(resp.body?.issues)
+        ? resp.body.issues
+        : Array.isArray(resp.body?.data)
+          ? resp.body.data
+          : [];
 
     const now = Date.now();
     const stuck = issues.filter(issue => {
@@ -267,11 +291,11 @@ async function checkStuckIssues() {
     } else {
       warn(`Check 3 ALERT — ${stuck.length} issue(s) in_progress >2h with no activity:`);
       for (const issue of stuck) {
-        const sinceMs = issue.updatedAt
-          ? now - new Date(issue.updatedAt).getTime()
-          : null;
+        const sinceMs = issue.updatedAt ? now - new Date(issue.updatedAt).getTime() : null;
         const sinceMin = sinceMs ? Math.round(sinceMs / 60000) : '?';
-        warn(`  issue=${issue.id} title="${issue.title ?? 'unknown'}" stuck_min=${sinceMin} agent=${issue.assigneeId ?? 'none'}`);
+        warn(
+          `  issue=${issue.id} title="${issue.title ?? 'unknown'}" stuck_min=${sinceMin} agent=${issue.assigneeId ?? 'none'}`,
+        );
       }
     }
   } catch (e) {
@@ -287,10 +311,16 @@ function checkFreeFleet(agents) {
   }
 
   const freeFleet = agents.filter(a => FREE_FLEET_IDS.has(a.id));
-  const idle = freeFleet.filter(a => a.status === 'idle' || a.status === 'available' || !a.status);
-  const working = freeFleet.filter(a => a.status === 'working' || a.status === 'in_progress' || a.status === 'busy');
+  const idle = freeFleet.filter(
+    a => a.status === 'idle' || a.status === 'available' || !a.status,
+  );
+  const working = freeFleet.filter(
+    a => a.status === 'working' || a.status === 'in_progress' || a.status === 'busy',
+  );
 
-  info(`Check 4 — Free fleet utilization: ${freeFleet.length} total, ${idle.length} idle, ${working.length} working.`);
+  info(
+    `Check 4 — Free fleet utilization: ${freeFleet.length} total, ${idle.length} idle, ${working.length} working.`,
+  );
   for (const a of freeFleet) {
     info(`  agent=${a.id} name="${a.name ?? 'unknown'}" status=${a.status ?? 'unknown'}`);
   }
@@ -302,7 +332,9 @@ async function checkBudget() {
     const resp = await apiGet(`/api/companies/${COMPANY_ID}/budget`);
     if (resp.status === 404 || resp.status === 405) {
       // Endpoint may not exist — try alternate
-      info(`Check 5 SKIP — budget endpoint not found (HTTP ${resp.status}). Skipping budget check.`);
+      info(
+        `Check 5 SKIP — budget endpoint not found (HTTP ${resp.status}). Skipping budget check.`,
+      );
       return;
     }
     if (resp.status !== 200) {
@@ -314,7 +346,10 @@ async function checkBudget() {
     const spent = budget?.dailySpend ?? budget?.todaySpend ?? budget?.spent ?? null;
 
     if (spent === null) {
-      info('Check 5 INFO — budget endpoint returned data but spend field not found. Raw: ' + JSON.stringify(budget).slice(0, 200));
+      info(
+        'Check 5 INFO — budget endpoint returned data but spend field not found. Raw: ' +
+          JSON.stringify(budget).slice(0, 200),
+      );
       return;
     }
 
@@ -322,11 +357,17 @@ async function checkBudget() {
     const pct = ((spentNum / DAILY_BUDGET_LIMIT) * 100).toFixed(1);
 
     if (spentNum >= DAILY_BUDGET_LIMIT) {
-      error(`Check 5 ALERT — Daily budget EXCEEDED: $${spentNum.toFixed(2)} >= $${DAILY_BUDGET_LIMIT} limit (${pct}%). Pipeline may be hard-stopped.`);
+      error(
+        `Check 5 ALERT — Daily budget EXCEEDED: $${spentNum.toFixed(2)} >= $${DAILY_BUDGET_LIMIT} limit (${pct}%). Pipeline may be hard-stopped.`,
+      );
     } else if (spentNum >= DAILY_BUDGET_LIMIT * 0.8) {
-      warn(`Check 5 WARN — Daily budget at ${pct}%: $${spentNum.toFixed(2)} / $${DAILY_BUDGET_LIMIT}.`);
+      warn(
+        `Check 5 WARN — Daily budget at ${pct}%: $${spentNum.toFixed(2)} / $${DAILY_BUDGET_LIMIT}.`,
+      );
     } else {
-      info(`Check 5 PASS — Daily budget OK: $${spentNum.toFixed(2)} / $${DAILY_BUDGET_LIMIT} (${pct}%).`);
+      info(
+        `Check 5 PASS — Daily budget OK: $${spentNum.toFixed(2)} / $${DAILY_BUDGET_LIMIT} (${pct}%).`,
+      );
     }
   } catch (e) {
     warn(`Check 5 FAIL — budget check error: ${e.message}`);
@@ -376,8 +417,10 @@ function checkAgentCosts(state) {
         fs.readSync(fd, buffer, 0, readSize, Math.max(0, fileSize - readSize));
         fs.closeSync(fd);
 
-        const lines = buffer.toString('utf8').split('
-').filter(l => l.trim());
+        const lines = buffer
+          .toString('utf8')
+          .split('\n')
+          .filter(l => l.trim());
         for (const line of lines) {
           try {
             const entry = JSON.parse(line);
@@ -389,10 +432,14 @@ function checkAgentCosts(state) {
               const est = (inp * 3 + out * 15) / 1_000_000;
               if (est > 0) agentDailyCost += est;
             }
-          } catch { /* skip non-JSON */ }
+          } catch {
+            /* skip non-JSON */
+          }
         }
       }
-    } catch { continue; }
+    } catch {
+      continue;
+    }
 
     totalDailyCost += agentDailyCost;
 
@@ -410,26 +457,54 @@ function checkAgentCosts(state) {
       const pastDays = history.slice(0, -1);
       const avgCost = pastDays.reduce((sum, d) => sum + d.cost, 0) / pastDays.length;
       if (avgCost > 0 && agentDailyCost > avgCost * AGENT_COST_SPIKE_MULTIPLIER) {
-        alerts.push('agent=' + agentId + ' cost=$' + agentDailyCost.toFixed(2) + ' avg=$' + avgCost.toFixed(2) + ' (' + (agentDailyCost / avgCost).toFixed(1) + 'x spike)');
+        alerts.push(
+          'agent=' +
+            agentId +
+            ' cost=$' +
+            agentDailyCost.toFixed(2) +
+            ' avg=$' +
+            avgCost.toFixed(2) +
+            ' (' +
+            (agentDailyCost / avgCost).toFixed(1) +
+            'x spike)',
+        );
       }
     }
     if (agentDailyCost > SESSION_COST_ALERT) {
-      alerts.push('agent=' + agentId + ' daily_cost=$' + agentDailyCost.toFixed(2) + ' exceeds $' + SESSION_COST_ALERT + ' threshold');
+      alerts.push(
+        'agent=' +
+          agentId +
+          ' daily_cost=$' +
+          agentDailyCost.toFixed(2) +
+          ' exceeds $' +
+          SESSION_COST_ALERT +
+          ' threshold',
+      );
     }
   }
 
   if (alerts.length === 0) {
-    info('Check 6 PASS — Agent cost tracking: $' + totalDailyCost.toFixed(2) + ' total today across ' + agentDirs.length + ' agents.');
+    info(
+      'Check 6 PASS — Agent cost tracking: $' +
+        totalDailyCost.toFixed(2) +
+        ' total today across ' +
+        agentDirs.length +
+        ' agents.',
+    );
   } else {
     warn('Check 6 ALERT — ' + alerts.length + ' cost anomalies detected:');
-    for (const alert of alerts) { warn('  ' + alert); }
+    for (const alert of alerts) {
+      warn('  ' + alert);
+    }
   }
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  info('=== Paperclip Pipeline Health Check starting' + (DRY_RUN ? ' [DRY-RUN]' : '') + ' ===');
+  info(
+    '=== Paperclip Pipeline Health Check starting' + (DRY_RUN ? ' [DRY-RUN]' : '') + ' ===',
+  );
 
   const state = loadState();
   state.lastRunAt = new Date().toISOString();

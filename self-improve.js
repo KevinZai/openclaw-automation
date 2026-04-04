@@ -20,9 +20,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const BRIEF_DIR = process.env.BRIEF_DIR || './shared/daily-brief';
-const IMPROVEMENTS_DIR = process.env.IMPROVEMENTS_DIR || './shared/pending-improvements';
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
+
+const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
+const IMPROVEMENTS_DIR = path.join(CLAWD_DIR, 'shared/pending-improvements');
 const STATE_FILE = path.join(__dirname, '.self-improve-state.json');
 
 function loadState() {

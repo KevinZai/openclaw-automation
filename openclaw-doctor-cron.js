@@ -20,12 +20,14 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const BRIEF_DIR = process.env.BRIEF_DIR || './shared/daily-brief';
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
+const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
 
 function sendTelegramAlert(message) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID || process.env.KEVIN_TELEGRAM_CHAT_ID;
+  const chatId = process.env.ALERT_TELEGRAM_CHAT_ID || process.env.KEVIN_TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
   try {
     const encoded = encodeURIComponent(message);

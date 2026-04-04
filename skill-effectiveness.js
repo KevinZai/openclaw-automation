@@ -22,10 +22,14 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const AGENTS_DIR = process.env.AGENTS_DIR || path.join(os.homedir(), '.openclaw', 'agents');
+const OPENCLAW_DIR = process.env.OPENCLAW_DIR || path.join(os.homedir(), '.openclaw');
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
+
+const AGENTS_DIR = path.join(OPENCLAW_DIR, 'agents');
 const STATE_FILE = path.join(__dirname, '.skill-effectiveness-state.json');
-const BRIEF_DIR = process.env.BRIEF_DIR || './shared/daily-brief';
+const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
 const LOOKBACK_DAYS = 7;
 
 function loadState() {

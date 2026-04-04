@@ -20,11 +20,15 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const https = require('https');
 const http = require('http');
 
+const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+
 const STATE_FILE = path.join(__dirname, '.free-fleet-state.json');
-const BRIEF_DIR = process.env.BRIEF_DIR || './shared/daily-brief';
+const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
 
 const PROVIDERS = [
   {
@@ -37,7 +41,7 @@ const PROVIDERS = [
   },
   {
     name: 'Ollama (Lama)',
-    probe: 'http://localhost:11434/api/tags',
+    probe: `${OLLAMA_URL}/api/tags`,
     envKey: null, // local
     freeModels: ['local models'],
     limits: 'Unlimited (local, 16GB RAM)',
@@ -46,7 +50,7 @@ const PROVIDERS = [
   {
     name: 'Cloudflare Workers AI (Flare)',
     probe: null, // No free probe endpoint
-    envKey: 'CF_WORKERS_AI_TOKEN',
+    envKey: 'CF_AI_TOKEN',
     freeModels: ['@cf/meta/llama-3.3-70b-instruct-fp8-fast'],
     limits: '10K neurons/day free',
     agent: 'flare',
@@ -54,7 +58,7 @@ const PROVIDERS = [
   {
     name: 'HuggingFace Inference (Forge)',
     probe: null,
-    envKey: 'HF_TOKEN',
+    envKey: 'HF_API_TOKEN',
     freeModels: ['various HF models'],
     limits: '1K req/day free tier',
     agent: 'forge',
@@ -74,18 +78,23 @@ function saveState(state) {
 }
 
 function probeUrl(url) {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const client = url.startsWith('https') ? https : http;
     const key = process.env.GROQ_API_KEY;
-    const headers = key && url.includes('groq') ? { 'Authorization': `Bearer ${key}` } : {};
+    const headers = key && url.includes('groq') ? { Authorization: `Bearer ${key}` } : {};
 
-    const req = client.get(url, { timeout: 10000, headers }, (res) => {
+    const req = client.get(url, { timeout: 10000, headers }, res => {
       let body = '';
-      res.on('data', chunk => { body += chunk; });
+      res.on('data', chunk => {
+        body += chunk;
+      });
       res.on('end', () => resolve({ status: res.statusCode, available: res.statusCode < 400 }));
     });
     req.on('error', () => resolve({ status: 0, available: false }));
-    req.on('timeout', () => { req.destroy(); resolve({ status: 0, available: false }); });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ status: 0, available: false });
+    });
   });
 }
 
@@ -125,7 +134,7 @@ async function run() {
 
   // Check Ollama models specifically
   try {
-    const ollamaProbe = await probeUrl('http://localhost:11434/api/tags');
+    const ollamaProbe = await probeUrl(`${OLLAMA_URL}/api/tags`);
     if (ollamaProbe.available) {
       state.providers.lama.detail = 'Ollama running, models available';
     }
