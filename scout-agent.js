@@ -29,20 +29,20 @@ const { execSync } = require('child_process');
 
 const CLAWD_DIR = process.env.CLAWD_DIR || path.join(os.homedir(), 'clawd');
 const PAPERCLIP_URL = process.env.PAPERCLIP_URL || 'http://localhost:3110';
-const COMPANY = process.env.OPENCLAW_COMPANY_ID || 'd852cff2-1645-4c48-ae14-010bd8230444';
+const COMPANY = process.env.OPENCLAW_COMPANY_ID;
+if (!COMPANY) throw new Error('OPENCLAW_COMPANY_ID env var is required');
 
 const STATE_FILE = path.join(__dirname, '.scout-state.json');
 const BRIEF_DIR = path.join(CLAWD_DIR, 'shared/daily-brief');
 const WORKSPACES_DIR = path.join(CLAWD_DIR, 'workspaces');
 
 const FREE_AGENTS = {
-  oracle: process.env.AGENT_ID_ORACLE || 'bc370f55-81db-4e38-bbbb-00eca803d799',
-  forge: process.env.AGENT_ID_FORGE || '1234c699-6592-42a6-b746-266f9618507a',
-  lama: process.env.AGENT_ID_LAMA || 'f4ad011a-cc1c-46ac-a9c5-782891b48185',
+  oracle: process.env.AGENT_ID_ORACLE,
+  forge: process.env.AGENT_ID_FORGE,
+  lama: process.env.AGENT_ID_LAMA,
 };
 
-const FLEET_OPS_PROJECT =
-  process.env.FLEET_OPS_PROJECT_ID || '54370a04-d5b1-481a-87ca-6f9cfaf4a3ed';
+const FLEET_OPS_PROJECT = process.env.FLEET_OPS_PROJECT_ID;
 
 function loadState() {
   try {

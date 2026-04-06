@@ -39,8 +39,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OPENCLAW_AGENTS_DIR =
   process.env.OPENCLAW_AGENTS_DIR || path.join(os.homedir(), '.openclaw/agents');
 const PAPERCLIP_URL = process.env.PAPERCLIP_URL || 'http://localhost:3110';
-const COMPANY_ID =
-  process.env.OPENCLAW_COMPANY_ID || 'd852cff2-1645-4c48-ae14-010bd8230444';
+const COMPANY_ID = process.env.OPENCLAW_COMPANY_ID;
+if (!COMPANY_ID) throw new Error('OPENCLAW_COMPANY_ID env var is required');
 
 const BASE_URL = PAPERCLIP_URL;
 const STATE_FILE = path.join(__dirname, '.pipeline-health-state.json');
@@ -57,14 +57,16 @@ const AGENTS_SESSION_DIR = OPENCLAW_AGENTS_DIR;
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
-// Free fleet agent IDs (forge, flare, lama, oracle, codex-dev)
-const FREE_FLEET_IDS = new Set([
-  process.env.AGENT_ID_FORGE || '1234c699-6592-42a6-b746-266f9618507a', // forge
-  process.env.AGENT_ID_FLARE || 'da8ba82b-d860-4825-b387-3e3042478441', // flare
-  process.env.AGENT_ID_LAMA || 'f4ad011a-cc1c-46ac-a9c5-782891b48185', // lama
-  process.env.AGENT_ID_ORACLE || 'bc370f55-81db-4e38-bbbb-00eca803d799', // oracle
-  process.env.AGENT_ID_CODEX_DEV || 'c8660590-de82-463d-acf4-1e5b9fa22ae7', // codex-dev
-]);
+// Free fleet agent IDs — configure via env vars (see .env.example)
+const FREE_FLEET_IDS = new Set(
+  [
+    process.env.AGENT_ID_FORGE, // forge
+    process.env.AGENT_ID_FLARE, // flare
+    process.env.AGENT_ID_LAMA, // lama
+    process.env.AGENT_ID_ORACLE, // oracle
+    process.env.AGENT_ID_CODEX_DEV, // codex-dev
+  ].filter(Boolean),
+);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
