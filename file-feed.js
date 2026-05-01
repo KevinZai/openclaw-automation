@@ -20,7 +20,7 @@ const path = require('path');
 const CLAWD = process.env.CLAWD_DIR || path.join(require('os').homedir(), 'clawd');
 const FEED_LOG = path.join(CLAWD, 'shared/feed.log');
 const FEED_HTML = path.join(CLAWD, 'shared/feed.html');
-const FILES_BASE_URL = process.env.FILES_BASE_URL || 'https://files.k3v80.com';
+const FILES_BASE_URL = process.env.FILES_BASE_URL || 'http://localhost:8080';
 const POLL_INTERVAL = 60000; // 60 seconds
 const STATE_FILE = path.join(CLAWD, 'scripts/.file-feed-state.json');
 
